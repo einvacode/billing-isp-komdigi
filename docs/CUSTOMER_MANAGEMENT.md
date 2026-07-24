@@ -1,228 +1,243 @@
-# 👥 Customer Management API
+# 👥 Customer Management Implementation
 
 ## Overview
 
-Manajemen data pelanggan ISP dengan fitur lengkap termasuk validasi NPWP, KTP, dan status management.
+Sistem manajemen pelanggan dengan validasi NPWP, dukungan untuk perorangan dan badan usaha, serta fitur verifikasi data.
 
 ---
 
 ## ✅ Features
 
-### ✅ Customer Operations
-- **Create** customer baru (personal, business, government)
-- **Read** data customer dengan pagination & filtering
-- **Update** data customer (email, phone, address, dll)
-- **Delete** customer
-- **Search** customer by name, email, account number, company name
+### Customer Types
+- **Individual** (Perorangan) - Email & nomor telepon
+- **Business** (Badan Usaha) - NPWP, nama badan usaha, jenis usaha
 
-### ✅ Validation
-- Email validation & uniqueness
-- NPWP validation dengan check digit (Luhn algorithm)
-- KTP validation (16 digits)
-- Account number uniqueness
-- Phone number format
-- Postal code format
+### Validation
+- ✅ Email format validation
+- ✅ Phone number validation (08XXXXXXXXX or +62XXXXXXXXX)
+- ✅ NPWP format validation (XX.XXX.XXX.X-XXX.XXX)
+- ✅ Unique email & NPWP per customer
+- ✅ Required fields validation
 
-### ✅ Customer Types
-- Personal customers
-- Business customers (dengan company name & contact person)
-- Government customers
-
-### ✅ Status Management
-- Active (default)
-- Inactive
-- Suspended
-- Terminated (dengan automatic termination date)
-
-### ✅ Access Control
-- Admin: Full CRUD
-- Staff: Create, Read, Update, Change Status
-- Customer: Read only (own profile)
+### Features
+- ✅ Auto-generated customer number (CUST-YYYY-XXXXXX)
+- ✅ NPWP verification workflow
+- ✅ Billing address (optional, different from main address)
+- ✅ Contact person management
+- ✅ Customer status management (active, inactive, suspended, cancelled)
+- ✅ Pagination & filtering
+- ✅ Full audit trail (createdBy, updatedBy, verifiedBy)
 
 ---
 
-## 🔐 Security
+## 📊 Database Schema
 
-- ✅ JWT token verification on all endpoints
-- ✅ Role-based authorization
-- ✅ User-scoped data (staff hanya bisa manage customer mereka sendiri)
-- ✅ Input validation & sanitization
-- ✅ Audit logging
+### Customers Table
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Primary key |
+| customerNumber | String (Unique) | Format: CUST-YYYY-XXXXXX |
+| customerName | String | Nama pelanggan / perusahaan |
+| email | String (Unique) | Email pelanggan |
+| phone | String | Nomor telepon |
+| npwp | String (Unique, Optional) | Format: XX.XXX.XXX.X-XXX.XXX |
+| npwpName | String | Nama sesuai NPWP |
+| customerType | Enum | 'individual' \| 'business' |
+| businessType | String | Jenis usaha (PT, CV, dll) |
+| businessLicense | String | Nomor izin usaha / SIUP |
+| address | Text | Alamat utama |
+| city | String | Kota / Kabupaten |
+| province | String | Provinsi |
+| postalCode | String | Kode pos |
+| contactPerson | String | Nama contact person |
+| contactPersonPhone | String | Nomor telepon contact person |
+| billingAddress | Text | Alamat penagihan (optional) |
+| billingCity | String | Kota penagihan |
+| billingProvince | String | Provinsi penagihan |
+| billingPostalCode | String | Kode pos penagihan |
+| status | Enum | 'active' \| 'inactive' \| 'suspended' \| 'cancelled' |
+| registrationDate | DateTime | Tanggal registrasi |
+| joinDate | DateTime | Tanggal mulai berlangganan |
+| notes | Text | Catatan tambahan |
+| isVerified | Boolean | Status verifikasi NPWP |
+| verifiedAt | DateTime | Waktu verifikasi |
+| verifiedBy | UUID | User yang melakukan verifikasi |
+| createdBy | UUID | User yang membuat record |
+| updatedBy | UUID | User yang mengubah record |
+| createdAt | DateTime | Timestamp pembuatan |
+| updatedAt | DateTime | Timestamp update |
 
 ---
 
-## 📊 API Endpoints
+## 🔌 API Endpoints
 
-### Create Customer
+### Protected Endpoints (All require authentication)
+
+#### 1. Create Customer
 ```http
 POST /api/customers
-Authorization: Bearer <token>
+Authorization: Bearer TOKEN
 Content-Type: application/json
 
 {
-  "name": "PT Maju Jaya",
-  "email": "admin@majujaya.com",
+  "customerName": "PT Maju Jaya Telekomunikasi",
+  "email": "contact@majujaya.com",
   "phone": "+6281234567890",
-  "npwp": "01.234.567.8-901.234",
-  "ktp": "3171234567890001",
-  "companyName": "PT Maju Jaya Indonesia",
-  "businessType": "business",
-  "address": "Jl. Gatot Subroto No. 123",
+  "customerType": "business",
+  "npwp": "12.345.678.9-123.456",
+  "npwpName": "PT MAJU JAYA TELEKOMUNIKASI",
+  "businessType": "PT",
+  "businessLicense": "1234567890123456",
+  "address": "Jl. Sudirman No. 123, Blok A",
   "city": "Jakarta",
   "province": "DKI Jakarta",
-  "postalCode": "12345",
-  "installationAddress": "Jl. Gatot Subroto No. 123 Unit A",
-  "installationCity": "Jakarta",
-  "installationProvince": "DKI Jakarta",
-  "installationPostalCode": "12345",
-  "accountNumber": "ACC-2026-001",
-  "status": "active",
-  "connectionDate": "2026-07-20T00:00:00Z",
+  "postalCode": "12190",
   "contactPerson": "Budi Santoso",
-  "contactPersonPhone": "+6281234567891",
-  "contactPersonEmail": "budi@majujaya.com",
-  "taxableStatus": true,
-  "notes": "Customer VIP"
+  "contactPersonPhone": "+6282345678901",
+  "billingAddress": "Jl. Gatot Subroto No. 456",
+  "billingCity": "Jakarta",
+  "billingProvince": "DKI Jakarta",
+  "billingPostalCode": "12930",
+  "notes": "Pelanggan korporat, pembayaran via transfer"
 }
 
 Response (201):
 {
   "success": true,
-  "message": "Customer berhasil dibuat",
+  "message": "Pelanggan berhasil dibuat",
   "data": {
     "id": "uuid",
-    "name": "PT Maju Jaya",
-    "email": "admin@majujaya.com",
+    "customerNumber": "CUST-2026-123456",
+    "customerName": "PT Maju Jaya Telekomunikasi",
+    "email": "contact@majujaya.com",
     "phone": "+6281234567890",
-    "npwp": "01.234.567.8-901.234",
-    "ktp": "3171234567890001",
-    "companyName": "PT Maju Jaya Indonesia",
-    "businessType": "business",
-    "accountNumber": "ACC-2026-001",
+    "npwp": "12.345.678.9-123.456",
+    "npwpName": "PT MAJU JAYA TELEKOMUNIKASI",
+    "customerType": "business",
+    "businessType": "PT",
+    "businessLicense": "1234567890123456",
+    "address": "Jl. Sudirman No. 123, Blok A",
+    "city": "Jakarta",
+    "province": "DKI Jakarta",
+    "postalCode": "12190",
+    "contactPerson": "Budi Santoso",
+    "contactPersonPhone": "+6282345678901",
     "status": "active",
-    "taxableStatus": true,
-    "createdAt": "2026-07-24T10:30:00Z",
-    "updatedAt": "2026-07-24T10:30:00Z"
+    "isVerified": false,
+    "registrationDate": "2026-07-24T15:35:00Z",
+    "joinDate": "2026-07-24T15:35:00Z",
+    "createdAt": "2026-07-24T15:35:00Z",
+    "updatedAt": "2026-07-24T15:35:00Z"
   }
 }
 ```
 
-### Get All Customers (dengan pagination & filtering)
+#### 2. Get All Customers (with Pagination & Filtering)
 ```http
-GET /api/customers?page=1&limit=10&status=active&businessType=business&search=maju
-Authorization: Bearer <token>
+GET /api/customers?limit=10&offset=0&status=active&customerType=business&search=maju
+Authorization: Bearer TOKEN
 
 Response (200):
 {
   "success": true,
-  "message": "Data customers berhasil diambil",
+  "message": "Data pelanggan berhasil diambil",
   "data": [
     {
       "id": "uuid",
-      "name": "PT Maju Jaya",
-      "email": "admin@majujaya.com",
+      "customerNumber": "CUST-2026-123456",
+      "customerName": "PT Maju Jaya Telekomunikasi",
+      "email": "contact@majujaya.com",
       "phone": "+6281234567890",
-      "npwp": "01.234.567.8-901.234",
-      "accountNumber": "ACC-2026-001",
       "status": "active",
-      "businessType": "business",
-      "taxableStatus": true,
-      "createdAt": "2026-07-24T10:30:00Z",
-      "updatedAt": "2026-07-24T10:30:00Z"
+      "customerType": "business",
+      "isVerified": true
     }
   ],
   "pagination": {
-    "page": 1,
+    "total": 45,
     "limit": 10,
-    "total": 42,
+    "offset": 0,
     "totalPages": 5,
-    "hasNextPage": true,
-    "hasPrevPage": false
+    "currentPage": 1
   }
 }
 ```
 
-**Query Parameters:**
-- `page` (default: 1) - Page number
-- `limit` (default: 10) - Items per page
-- `status` - Filter by status (active, inactive, suspended, terminated)
-- `businessType` - Filter by business type (personal, business, government)
-- `search` - Search by name, email, account number, company name
-
-### Get Customer by ID
+#### 3. Get Customer by ID
 ```http
-GET /api/customers/:id
-Authorization: Bearer <token>
+GET /api/customers/{id}
+Authorization: Bearer TOKEN
 
 Response (200):
 {
   "success": true,
-  "message": "Data customer berhasil diambil",
+  "message": "Data pelanggan berhasil diambil",
   "data": {
     "id": "uuid",
-    "name": "PT Maju Jaya",
-    "email": "admin@majujaya.com",
+    "customerNumber": "CUST-2026-123456",
+    "customerName": "PT Maju Jaya Telekomunikasi",
+    "email": "contact@majujaya.com",
     "phone": "+6281234567890",
-    "npwp": "01.234.567.8-901.234",
-    "accountNumber": "ACC-2026-001",
+    "npwp": "12.345.678.9-123.456",
+    "npwpName": "PT MAJU JAYA TELEKOMUNIKASI",
+    "customerType": "business",
+    "businessType": "PT",
+    "businessLicense": "1234567890123456",
+    "address": "Jl. Sudirman No. 123, Blok A",
+    "city": "Jakarta",
+    "province": "DKI Jakarta",
+    "postalCode": "12190",
+    "contactPerson": "Budi Santoso",
+    "contactPersonPhone": "+6282345678901",
+    "billingAddress": "Jl. Gatot Subroto No. 456",
     "status": "active",
-    ...
+    "registrationDate": "2026-07-24T15:35:00Z",
+    "joinDate": "2026-07-24T15:35:00Z",
+    "isVerified": true,
+    "verifiedAt": "2026-07-24T16:00:00Z",
+    "notes": "Pelanggan korporat, pembayaran via transfer"
   }
 }
 ```
 
-### Get Customer by Account Number
+#### 4. Update Customer
 ```http
-GET /api/customers/account/ACC-2026-001
-Authorization: Bearer <token>
-
-Response (200):
-{
-  "success": true,
-  "message": "Data customer berhasil diambil",
-  "data": {
-    "id": "uuid",
-    "accountNumber": "ACC-2026-001",
-    ...
-  }
-}
-```
-
-### Update Customer
-```http
-PUT /api/customers/:id
-Authorization: Bearer <token>
+PUT /api/customers/{id}
+Authorization: Bearer TOKEN
 Content-Type: application/json
 
 {
-  "name": "PT Maju Jaya Bersama",
-  "email": "newemail@majujaya.com",
-  "phone": "+6281234567892",
-  "npwp": "01.234.567.8-901.234",
-  "contactPerson": "Hendra Wijaya",
-  "contactPersonPhone": "+6281234567893",
-  "notes": "Updated contact info"
+  "customerName": "PT Maju Jaya Telekomunikasi Indonesia",
+  "phone": "+6281234567891",
+  "contactPerson": "Ani Wijaya",
+  "notes": "Update kontak person"
 }
 
 Response (200):
 {
   "success": true,
-  "message": "Customer berhasil diubah",
-  "data": {
-    "id": "uuid",
-    "name": "PT Maju Jaya Bersama",
-    "email": "newemail@majujaya.com",
-    "phone": "+6281234567892",
-    "contactPerson": "Hendra Wijaya",
-    ...
-  }
+  "message": "Data pelanggan berhasil diubah",
+  "data": { ... }
 }
 ```
 
-### Update Customer Status
+#### 5. Verify NPWP (Admin Only)
 ```http
-PATCH /api/customers/:id/status
-Authorization: Bearer <token>
+POST /api/customers/{id}/verify-npwp
+Authorization: Bearer ADMIN_TOKEN
+
+Response (200):
+{
+  "success": true,
+  "message": "NPWP berhasil diverifikasi"
+}
+```
+
+#### 6. Change Customer Status
+```http
+PUT /api/customers/{id}/status
+Authorization: Bearer TOKEN
 Content-Type: application/json
 
 {
@@ -232,228 +247,132 @@ Content-Type: application/json
 Response (200):
 {
   "success": true,
-  "message": "Status customer berhasil diubah",
-  "data": {
-    "id": "uuid",
-    "name": "PT Maju Jaya",
-    "status": "suspended",
-    ...
-  }
+  "message": "Status pelanggan berhasil diubah menjadi suspended"
 }
-
-Valid statuses: "active", "inactive", "suspended", "terminated"
 ```
 
-### Delete Customer
+#### 7. Delete Customer (Soft Delete, Admin Only)
 ```http
-DELETE /api/customers/:id
-Authorization: Bearer <token>
+DELETE /api/customers/{id}
+Authorization: Bearer ADMIN_TOKEN
 
 Response (200):
 {
   "success": true,
-  "message": "Customer berhasil dihapus"
+  "message": "Pelanggan berhasil dihapus"
 }
 ```
 
 ---
 
-## 🧪 Testing dengan cURL
+## 🔐 Access Control
 
-### 1. Login dulu untuk dapatkan token
-```bash
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"staff@billing-isp.com",
-    "password":"Staff@12345"
-  }'
+| Endpoint | Method | Roles | Description |
+|----------|--------|-------|-------------|
+| /api/customers | POST | admin, staff | Buat pelanggan baru |
+| /api/customers | GET | admin, staff, customer | Lihat daftar pelanggan |
+| /api/customers/:id | GET | admin, staff, customer | Lihat detail pelanggan |
+| /api/customers/:id | PUT | admin, staff | Update pelanggan |
+| /api/customers/:id | DELETE | admin | Hapus pelanggan |
+| /api/customers/:id/verify-npwp | POST | admin | Verifikasi NPWP |
+| /api/customers/:id/status | PUT | admin, staff | Ubah status pelanggan |
 
-# Simpan accessToken dari response
-TOKEN="eyJhbGciOiJIUzI1NiIs..."
-```
+---
 
-### 2. Create Customer
+## 🧪 Testing Examples
+
+### Create Business Customer
 ```bash
 curl -X POST http://localhost:3000/api/customers \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "PT Maju Jaya",
-    "email": "admin@majujaya.com",
+    "customerName": "PT Telkom Indonesia",
+    "email": "pt.telkom@example.com",
     "phone": "+6281234567890",
-    "npwp": "01.234.567.8-901.234",
-    "companyName": "PT Maju Jaya Indonesia",
-    "businessType": "business",
-    "accountNumber": "ACC-2026-001",
-    "address": "Jl. Gatot Subroto No. 123",
+    "customerType": "business",
+    "npwp": "00.000.000.0-000.000",
+    "npwpName": "PT TELKOM INDONESIA",
+    "businessType": "PT",
+    "businessLicense": "1234567890123456",
+    "address": "Jl. Jendral Sudirman Kav. 52-53",
     "city": "Jakarta",
     "province": "DKI Jakarta",
-    "postalCode": "12345"
+    "postalCode": "12190"
   }'
 ```
 
-### 3. Get All Customers
+### Create Individual Customer
 ```bash
-curl -X GET "http://localhost:3000/api/customers?page=1&limit=10&status=active" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### 4. Get Customer by ID
-```bash
-curl -X GET http://localhost:3000/api/customers/{customer-id} \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### 5. Get Customer by Account Number
-```bash
-curl -X GET http://localhost:3000/api/customers/account/ACC-2026-001 \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### 6. Update Customer
-```bash
-curl -X PUT http://localhost:3000/api/customers/{customer-id} \
-  -H "Authorization: Bearer $TOKEN" \
+curl -X POST http://localhost:3000/api/customers \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "PT Maju Jaya Bersama",
-    "email": "newemail@majujaya.com",
-    "phone": "+6281234567892"
+    "customerName": "Budi Santoso",
+    "email": "budi.santoso@example.com",
+    "phone": "+6281234567890",
+    "customerType": "individual",
+    "address": "Jl. Kemang Timur No. 45",
+    "city": "Jakarta",
+    "province": "DKI Jakarta",
+    "postalCode": "12730"
   }'
 ```
 
-### 7. Update Status
+### Get All Customers (Filter by Status)
 ```bash
-curl -X PATCH http://localhost:3000/api/customers/{customer-id}/status \
-  -H "Authorization: Bearer $TOKEN" \
+curl -X GET "http://localhost:3000/api/customers?status=active&limit=20" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Verify NPWP
+```bash
+curl -X POST http://localhost:3000/api/customers/{customer_id}/verify-npwp \
+  -H "Authorization: Bearer ADMIN_TOKEN"
+```
+
+### Change Status to Suspended
+```bash
+curl -X PUT http://localhost:3000/api/customers/{customer_id}/status \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status": "suspended"}'
 ```
 
-### 8. Delete Customer
-```bash
-curl -X DELETE http://localhost:3000/api/customers/{customer-id} \
-  -H "Authorization: Bearer $TOKEN"
-```
-
 ---
 
-## 📋 Validation Rules
+## ✅ Validation Rules
 
 ### Email
-- Format: valid email format (user@domain.com)
-- Unique: tidak boleh ada duplicate
-- Required: wajib diisi
+- Format: valid email address (user@example.com)
+- Unique per customer
+- Required
 
-### NPWP (Nomor Pokok Wajib Pajak)
-- Format: 15 digits (01.234.567.8-901.234)
-- Validation: Check digit menggunakan modulo 11
-- Unique: tidak boleh ada duplicate
-- Optional: boleh kosong untuk personal non-taxable
+### Phone Number
+- Format: 08XXXXXXXXXX or +62XXXXXXXXXX
+- 9-12 digits
+- Required
 
-**Valid NPWP Format:**
-```
-01.234.567.8-901.234  (formatted)
-012345678901234       (unformatted)
-```
+### NPWP
+- Format: XX.XXX.XXX.X-XXX.XXX (contoh: 12.345.678.9-123.456)
+- Unique per customer
+- Optional untuk perorangan, required untuk badan usaha
+- Length: 18 characters with separators
 
-**Example Valid NPWPs:**
-```
-01.234.567.8-901.234
-02.345.678.9-012.345
-03.456.789.0-123.456
-```
-
-### KTP (Kartu Tanda Penduduk)
-- Format: 16 digits
-- Unique: tidak boleh ada duplicate
-- Optional: boleh kosong
-
-**Example Valid KTPs:**
-```
-3171234567890001
-3172345678901234
-```
-
-### Account Number
-- Format: custom, e.g., ACC-2026-001
-- Unique: wajib unik per customer
-- Required: wajib diisi
-
-### Phone
-- Format: Indonesian phone (0... atau +62...)
-- Example: 0812345678 atau +6281234567890
-
-### Business Type
-- personal (default)
-- business
-- government
-
-### Status
-- active (default)
-- inactive
-- suspended
-- terminated (auto set termination date)
+### Customer Number (Auto-generated)
+- Format: CUST-YYYY-XXXXXX
+- Example: CUST-2026-123456
+- Unique per customer
 
 ---
 
-## 🔑 Access Control
+## 📝 Notes
 
-| Endpoint | Admin | Staff | Customer |
-|----------|-------|-------|----------|
-| POST /customers | ✅ | ✅ | ❌ |
-| GET /customers | ✅ | ✅ | ❌ |
-| GET /customers/:id | ✅ | ✅ | ❌ |
-| PUT /customers/:id | ✅ | ✅ | ❌ |
-| PATCH /customers/:id/status | ✅ | ✅ | ❌ |
-| DELETE /customers/:id | ✅ | ❌ | ❌ |
-
----
-
-## 📊 Database Schema
-
-```sql
-CREATE TABLE Customers (
-  id UUID PRIMARY KEY,
-  userId UUID NOT NULL REFERENCES Users(id),
-  name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  phone VARCHAR(20) NOT NULL,
-  npwp VARCHAR(20) UNIQUE,
-  ktp VARCHAR(20) UNIQUE,
-  companyName VARCHAR(255),
-  businessType ENUM('personal', 'business', 'government'),
-  address TEXT,
-  city VARCHAR(100),
-  province VARCHAR(100),
-  postalCode VARCHAR(10),
-  installationAddress TEXT,
-  installationCity VARCHAR(100),
-  installationProvince VARCHAR(100),
-  installationPostalCode VARCHAR(10),
-  accountNumber VARCHAR(50) NOT NULL UNIQUE,
-  status ENUM('active', 'inactive', 'suspended', 'terminated'),
-  connectionDate TIMESTAMP,
-  terminationDate TIMESTAMP,
-  contactPerson VARCHAR(255),
-  contactPersonPhone VARCHAR(20),
-  contactPersonEmail VARCHAR(255),
-  taxableStatus BOOLEAN,
-  notes TEXT,
-  createdAt TIMESTAMP DEFAULT NOW(),
-  updatedAt TIMESTAMP DEFAULT NOW()
-);
-
-INDEXES:
-- email
-- npwp
-- ktp
-- accountNumber
-- userId
-- status
-- businessType
-```
+1. **Soft Delete**: Customers are soft-deleted by changing status to 'cancelled'
+2. **NPWP Verification**: Currently marks as verified, but ready for API integration with Kemenkeu
+3. **Billing Address**: Optional field for customers with different billing address
+4. **Audit Trail**: All changes tracked with createdBy, updatedBy, verifiedBy fields
+5. **Pagination**: Default limit 10, supports custom limit & offset
 
 ---
 

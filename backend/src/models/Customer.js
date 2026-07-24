@@ -9,153 +9,175 @@ module.exports = (sequelize) => {
     },
     userId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'Users',
         key: 'id'
-      },
-      comment: 'Reference to user who manages this customer (staff/admin)'
+      }
     },
-    name: {
-      type: DataTypes.STRING(255),
+    customerNumber: {
+      type: DataTypes.STRING,
+      unique: true,
       allowNull: false,
-      comment: 'Customer name'
+      comment: 'Nomor langganan pelanggan (auto-generated)'
+    },
+    customerName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Nama pelanggan / perusahaan'
     },
     email: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
-      comment: 'Customer email address'
+      validate: {
+        isEmail: true
+      },
+      comment: 'Email pelanggan'
     },
     phone: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING,
       allowNull: false,
-      comment: 'Customer phone number'
+      comment: 'Nomor telepon pelanggan'
     },
     npwp: {
-      type: DataTypes.STRING(20),
-      allowNull: true,
+      type: DataTypes.STRING,
       unique: true,
-      comment: 'Tax ID number (NPWP)'
-    },
-    ktp: {
-      type: DataTypes.STRING(20),
       allowNull: true,
-      unique: true,
-      comment: 'ID card number (KTP)'
+      comment: 'NPWP untuk pelanggan badan usaha (format: XX.XXX.XXX.X-XXX.XXX)'
     },
-    companyName: {
-      type: DataTypes.STRING(255),
+    npwpName: {
+      type: DataTypes.STRING,
       allowNull: true,
-      comment: 'Company name if business customer'
+      comment: 'Nama sesuai NPWP'
+    },
+    customerType: {
+      type: DataTypes.ENUM('individual', 'business'),
+      defaultValue: 'individual',
+      comment: 'Tipe pelanggan: individual (perorangan) atau business (badan usaha)'
     },
     businessType: {
-      type: DataTypes.ENUM('personal', 'business', 'government'),
-      defaultValue: 'personal',
-      comment: 'Type of customer'
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Jenis usaha (contoh: PT, CV, Koperasi, dll)'
+    },
+    businessLicense: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Nomor izin usaha / SIUP'
     },
     address: {
       type: DataTypes.TEXT,
-      allowNull: true,
-      comment: 'Customer address'
+      allowNull: false,
+      comment: 'Alamat pelanggan'
     },
     city: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      comment: 'City'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Kota / Kabupaten'
     },
     province: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      comment: 'Province'
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Provinsi'
     },
     postalCode: {
-      type: DataTypes.STRING(10),
-      allowNull: true,
-      comment: 'Postal code'
-    },
-    installationAddress: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      comment: 'ISP installation address (if different from billing address)'
-    },
-    installationCity: {
-      type: DataTypes.STRING(100),
-      allowNull: true
-    },
-    installationProvince: {
-      type: DataTypes.STRING(100),
-      allowNull: true
-    },
-    installationPostalCode: {
-      type: DataTypes.STRING(10),
-      allowNull: true
-    },
-    accountNumber: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
-      comment: 'Unique customer account number'
-    },
-    status: {
-      type: DataTypes.ENUM('active', 'inactive', 'suspended', 'terminated'),
-      defaultValue: 'active',
-      comment: 'Customer account status'
-    },
-    connectionDate: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      comment: 'ISP connection start date'
-    },
-    terminationDate: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      comment: 'ISP termination date'
+      comment: 'Kode pos'
     },
     contactPerson: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.STRING,
       allowNull: true,
-      comment: 'Contact person name for business'
+      comment: 'Nama contact person'
     },
     contactPersonPhone: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING,
       allowNull: true,
-      comment: 'Contact person phone'
+      comment: 'Nomor telepon contact person'
     },
-    contactPersonEmail: {
-      type: DataTypes.STRING(255),
+    billingAddress: {
+      type: DataTypes.TEXT,
       allowNull: true,
-      comment: 'Contact person email'
+      comment: 'Alamat penagihan (jika berbeda dengan alamat utama)'
     },
-    taxableStatus: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true,
-      comment: 'Whether customer is subject to tax'
+    billingCity: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    billingProvince: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    billingPostalCode: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'inactive', 'suspended', 'cancelled'),
+      defaultValue: 'active',
+      comment: 'Status pelanggan'
+    },
+    registrationDate: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+      comment: 'Tanggal registrasi pelanggan'
+    },
+    joinDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Tanggal mulai berlangganan'
     },
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
-      comment: 'Internal notes about customer'
+      comment: 'Catatan tambahan tentang pelanggan'
     },
-    createdAt: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW
+    isVerified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      comment: 'Status verifikasi data NPWP'
     },
-    updatedAt: {
+    verifiedAt: {
       type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW
+      allowNull: true,
+      comment: 'Waktu verifikasi data NPWP'
+    },
+    verifiedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'Users',
+        key: 'id'
+      },
+      comment: 'User yang melakukan verifikasi'
+    },
+    createdBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'Users',
+        key: 'id'
+      }
+    },
+    updatedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'Users',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'Customers',
     timestamps: true,
+    underscored: false,
     indexes: [
+      { fields: ['customerNumber'] },
       { fields: ['email'] },
       { fields: ['npwp'] },
-      { fields: ['ktp'] },
-      { fields: ['accountNumber'] },
-      { fields: ['userId'] },
       { fields: ['status'] },
-      { fields: ['businessType'] }
+      { fields: ['customerType'] },
+      { fields: ['createdAt'] }
     ]
   });
 
