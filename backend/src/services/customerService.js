@@ -1,98 +1,112 @@
-const { Customer, User } = require('../models');
+const { Customer } = require('../models');
 const logger = require('../utils/logger');
-const { validateNPWP, generateCustomerCode } = require('../utils/customerValidators');
+const { validateNPWP, validateKTP, validateEmail } = require('../utils/validators');
+const { Op } = require('sequelize');
 
 class CustomerService {
   /**
    * Create new customer
    */
-  static async createCustomer(data, userId) {
+  static async createCustomer(userId, data) {
     try {
       const {
-        customerName,
-        customerType,
-        businessType,
+        name,
         email,
         phone,
         npwp,
-        identity,
-        identityType,
+        ktp,
+        companyName,
+        businessType,
         address,
-        province,
         city,
-        zipCode,
+        province,
+        postalCode,
+        installationAddress,
+        installationCity,
+        installationProvince,
+        installationPostalCode,
+        accountNumber,
+        status,
+        connectionDate,
         contactPerson,
         contactPersonPhone,
-        bankAccountName,
-        bankAccountNumber,
-        bankName,
-        creditLimit,
+        contactPersonEmail,
+        taxableStatus,
         notes
       } = data;
 
-      // Validate required fields
-      if (!customerName || !email || !phone || !address) {
-        throw new Error('Customer name, email, phone, dan address wajib diisi');
+      // Validate email
+      if (!validateEmail(email)) {
+        throw new Error('Format email tidak valid');
       }
 
-      // Check if email already exists
-      const existingCustomer = await Customer.findOne({ where: { email } });
-      if (existingCustomer) {
+      // Check email uniqueness
+      const existingEmail = await Customer.findOne({ where: { email } });
+      if (existingEmail) {
         throw new Error('Email sudah terdaftar');
       }
 
-      // Validate and check NPWP if provided
-      let npwpValidated = false;
-      let npwpValidationDate = null;
-
+      // Validate NPWP if provided
       if (npwp) {
-        const isValidNPWP = validateNPWP(npwp);
-        if (!isValidNPWP) {
-          throw new Error('Format NPWP tidak valid. NPWP harus 15 digit');
+        if (!validateNPWP(npwp)) {
+          throw new Error('NPWP tidak valid');
         }
 
-        // Check if NPWP already registered
         const existingNPWP = await Customer.findOne({ where: { npwp } });
         if (existingNPWP) {
           throw new Error('NPWP sudah terdaftar');
         }
-
-        npwpValidated = true;
-        npwpValidationDate = new Date();
       }
 
-      // Generate customer code
-      const customerCode = await generateCustomerCode();
+      // Validate KTP if provided
+      if (ktp) {
+        if (!validateKTP(ktp)) {
+          throw new Error('KTP tidak valid');
+        }
+
+        const existingKTP = await Customer.findOne({ where: { ktp } });
+        if (existingKTP) {
+          throw new Error('KTP sudah terdaftar');
+        }
+      }
+
+      // Check account number uniqueness
+      const existingAccount = await Customer.findOne({ where: { accountNumber } });
+      if (existingAccount) {
+        throw new Error('Account number sudah terdaftar');
+      }
 
       // Create customer
       const customer = await Customer.create({
-        customerCode,
-        customerName,
-        customerType: customerType || 'personal',
-        businessType,
+        userId,
+        name,
         email,
         phone,
-        npwp,
-        npwpValidated,
-        npwpValidationDate,
-        identity,
-        identityType,
-        address,
-        province,
-        city,
-        zipCode,
-        contactPerson,
-        contactPersonPhone,
-        bankAccountName,
-        bankAccountNumber,
-        bankName,
-        creditLimit: creditLimit || 0,
-        createdBy: userId
+        npwp: npwp || null,
+        ktp: ktp || null,
+        companyName: companyName || null,
+        businessType: businessType || 'personal',
+        address: address || null,
+        city: city || null,
+        province: province || null,
+        postalCode: postalCode || null,
+        installationAddress: installationAddress || null,
+        installationCity: installationCity || null,
+        installationProvince: installationProvince || null,
+        installationPostalCode: installationPostalCode || null,
+        accountNumber,
+        status: status || 'active',
+        connectionDate: connectionDate || new Date(),
+        contactPerson: contactPerson || null,
+        contactPersonPhone: contactPersonPhone || null,
+        contactPersonEmail: contactPersonEmail || null,
+        taxableStatus: taxableStatus !== undefined ? taxableStatus : true,
+        notes: notes || null
       });
 
-      logger.info(`Customer created: ${customerCode}`);
+      logger.info(`Customer created: ${customer.id}`);
 
-      return this.formatCustomerResponse(customer);
+      return this.formatCustomer(customer);
     } catch (error) {
       logger.error('Create customer error:', error.message);
       throw error;
@@ -100,61 +114,58 @@ class CustomerService {
   }
 
   /**
-   * Get all customers with filters and pagination
+   * Get all customers with pagination and filtering
    */
-  static async getAllCustomers(filters = {}) {
+  static async getAllCustomers(userId, options = {}) {
     try {
-      const {
-        page = 1,
-        limit = 10,
-        status = 'active',
-        search = '',
-        sortBy = 'createdAt',
-        sortOrder = 'DESC'
-      } = filters;
-
+      const { page = 1, limit = 10, status, businessType, search } = options;
       const offset = (page - 1) * limit;
 
-      // Build where clause
-      const where = {};
+      let where = { userId };
 
+      // Filter by status
       if (status) {
         where.status = status;
       }
 
-      if (search) {
-        const { Op } = require('sequelize');
-        where[Op.or] = [
-          { customerCode: { [Op.iLike]: `%${search}%` } },
-          { customerName: { [Op.iLike]: `%${search}%` } },
-          { email: { [Op.iLike]: `%${search}%` } },
-          { phone: { [Op.iLike]: `%${search}%` } },
-          { npwp: { [Op.iLike]: `%${search}%` } }
-        ];
+      // Filter by business type
+      if (businessType) {
+        where.businessType = businessType;
       }
 
-      // Query customers
+      // Search by name, email, or account number
+      if (search) {
+        where = {
+          ...where,
+          [Op.or]: [
+            { name: { [Op.iLike]: `%${search}%` } },
+            { email: { [Op.iLike]: `%${search}%` } },
+            { accountNumber: { [Op.iLike]: `%${search}%` } },
+            { companyName: { [Op.iLike]: `%${search}%` } }
+          ]
+        };
+      }
+
       const { count, rows } = await Customer.findAndCountAll({
         where,
-        limit,
         offset,
-        order: [[sortBy, sortOrder]],
-        attributes: {
-          exclude: ['createdBy', 'updatedBy']
-        }
+        limit,
+        order: [['createdAt', 'DESC']]
       });
 
       const totalPages = Math.ceil(count / limit);
 
-      logger.info(`Retrieved ${rows.length} customers`);
+      logger.info(`Retrieved ${rows.length} customers for user: ${userId}`);
 
       return {
-        data: rows.map(c => this.formatCustomerResponse(c)),
+        data: rows.map(c => this.formatCustomer(c)),
         pagination: {
-          total: count,
           page,
           limit,
-          totalPages
+          total: count,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
         }
       };
     } catch (error) {
@@ -164,27 +175,15 @@ class CustomerService {
   }
 
   /**
-   * Get single customer by ID
+   * Get customer by ID
    */
-  static async getCustomerById(customerId) {
+  static async getCustomerById(customerId, userId) {
     try {
-      const customer = await Customer.findByPk(customerId, {
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'email', 'name', 'role']
-          }
-        ]
+      const customer = await Customer.findOne({
+        where: { id: customerId, userId }
       });
 
-      if (!customer) {
-        throw new Error('Customer tidak ditemukan');
-      }
-
-      logger.info(`Retrieved customer: ${customer.customerCode}`);
-
-      return this.formatCustomerResponse(customer);
+      return customer ? this.formatCustomer(customer) : null;
     } catch (error) {
       logger.error('Get customer by ID error:', error.message);
       throw error;
@@ -192,45 +191,67 @@ class CustomerService {
   }
 
   /**
+   * Get customer by account number
+   */
+  static async getCustomerByAccountNumber(accountNumber, userId) {
+    try {
+      const customer = await Customer.findOne({
+        where: { accountNumber, userId }
+      });
+
+      return customer ? this.formatCustomer(customer) : null;
+    } catch (error) {
+      logger.error('Get customer by account number error:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Update customer
    */
-  static async updateCustomer(customerId, data, userId) {
+  static async updateCustomer(customerId, userId, data) {
     try {
-      const customer = await Customer.findByPk(customerId);
+      const customer = await Customer.findOne({
+        where: { id: customerId, userId }
+      });
 
       if (!customer) {
-        throw new Error('Customer tidak ditemukan');
+        return null;
       }
 
       const {
-        customerName,
-        businessType,
+        name,
         email,
         phone,
         npwp,
-        identity,
-        identityType,
+        ktp,
+        companyName,
+        businessType,
         address,
-        province,
         city,
-        zipCode,
-        billingAddress,
-        billingProvince,
-        billingCity,
-        billingZipCode,
+        province,
+        postalCode,
+        installationAddress,
+        installationCity,
+        installationProvince,
+        installationPostalCode,
+        status,
         contactPerson,
         contactPersonPhone,
-        bankAccountName,
-        bankAccountNumber,
-        bankName,
-        creditLimit,
-        status,
+        contactPersonEmail,
+        taxableStatus,
         notes
       } = data;
 
-      // Check if email changed and already exists
+      // Validate email if provided and changed
       if (email && email !== customer.email) {
-        const existingEmail = await Customer.findOne({ where: { email } });
+        if (!validateEmail(email)) {
+          throw new Error('Format email tidak valid');
+        }
+
+        const existingEmail = await Customer.findOne({
+          where: { email, id: { [Op.ne]: customerId } }
+        });
         if (existingEmail) {
           throw new Error('Email sudah terdaftar');
         }
@@ -238,58 +259,61 @@ class CustomerService {
 
       // Validate NPWP if provided and changed
       if (npwp && npwp !== customer.npwp) {
-        const isValidNPWP = validateNPWP(npwp);
-        if (!isValidNPWP) {
-          throw new Error('Format NPWP tidak valid. NPWP harus 15 digit');
+        if (!validateNPWP(npwp)) {
+          throw new Error('NPWP tidak valid');
         }
 
-        const existingNPWP = await Customer.findOne({ where: { npwp } });
+        const existingNPWP = await Customer.findOne({
+          where: { npwp, id: { [Op.ne]: customerId } }
+        });
         if (existingNPWP) {
           throw new Error('NPWP sudah terdaftar');
         }
       }
 
-      // Prepare update data
-      const updateData = {};
-      const allowedFields = [
-        'customerName',
-        'businessType',
-        'email',
-        'phone',
-        'npwp',
-        'identity',
-        'identityType',
-        'address',
-        'province',
-        'city',
-        'zipCode',
-        'billingAddress',
-        'billingProvince',
-        'billingCity',
-        'billingZipCode',
-        'contactPerson',
-        'contactPersonPhone',
-        'bankAccountName',
-        'bankAccountNumber',
-        'bankName',
-        'creditLimit',
-        'status',
-        'notes'
-      ];
-
-      allowedFields.forEach(field => {
-        if (data[field] !== undefined) {
-          updateData[field] = data[field];
+      // Validate KTP if provided and changed
+      if (ktp && ktp !== customer.ktp) {
+        if (!validateKTP(ktp)) {
+          throw new Error('KTP tidak valid');
         }
-      });
 
-      updateData.updatedBy = userId;
+        const existingKTP = await Customer.findOne({
+          where: { ktp, id: { [Op.ne]: customerId } }
+        });
+        if (existingKTP) {
+          throw new Error('KTP sudah terdaftar');
+        }
+      }
+
+      // Update fields
+      const updateData = {};
+      if (name !== undefined) updateData.name = name;
+      if (email !== undefined) updateData.email = email;
+      if (phone !== undefined) updateData.phone = phone;
+      if (npwp !== undefined) updateData.npwp = npwp || null;
+      if (ktp !== undefined) updateData.ktp = ktp || null;
+      if (companyName !== undefined) updateData.companyName = companyName || null;
+      if (businessType !== undefined) updateData.businessType = businessType;
+      if (address !== undefined) updateData.address = address || null;
+      if (city !== undefined) updateData.city = city || null;
+      if (province !== undefined) updateData.province = province || null;
+      if (postalCode !== undefined) updateData.postalCode = postalCode || null;
+      if (installationAddress !== undefined) updateData.installationAddress = installationAddress || null;
+      if (installationCity !== undefined) updateData.installationCity = installationCity || null;
+      if (installationProvince !== undefined) updateData.installationProvince = installationProvince || null;
+      if (installationPostalCode !== undefined) updateData.installationPostalCode = installationPostalCode || null;
+      if (status !== undefined) updateData.status = status;
+      if (contactPerson !== undefined) updateData.contactPerson = contactPerson || null;
+      if (contactPersonPhone !== undefined) updateData.contactPersonPhone = contactPersonPhone || null;
+      if (contactPersonEmail !== undefined) updateData.contactPersonEmail = contactPersonEmail || null;
+      if (taxableStatus !== undefined) updateData.taxableStatus = taxableStatus;
+      if (notes !== undefined) updateData.notes = notes || null;
 
       await customer.update(updateData);
 
-      logger.info(`Customer updated: ${customer.customerCode}`);
+      logger.info(`Customer updated: ${customerId}`);
 
-      return this.formatCustomerResponse(customer);
+      return this.formatCustomer(customer);
     } catch (error) {
       logger.error('Update customer error:', error.message);
       throw error;
@@ -297,75 +321,54 @@ class CustomerService {
   }
 
   /**
-   * Suspend customer account
+   * Update customer status
    */
-  static async suspendCustomer(customerId, reason, userId) {
+  static async updateCustomerStatus(customerId, userId, status) {
     try {
-      const customer = await Customer.findByPk(customerId);
-
-      if (!customer) {
-        throw new Error('Customer tidak ditemukan');
-      }
-
-      await customer.update({
-        status: 'suspended',
-        notes: `${customer.notes || ''}\n[SUSPENDED] ${reason || 'No reason provided'} - ${new Date().toISOString()}`,
-        updatedBy: userId
+      const customer = await Customer.findOne({
+        where: { id: customerId, userId }
       });
 
-      logger.info(`Customer suspended: ${customer.customerCode}`);
+      if (!customer) {
+        return null;
+      }
 
-      return this.formatCustomerResponse(customer);
+      const updateData = { status };
+
+      // Set termination date if status is terminated
+      if (status === 'terminated' && !customer.terminationDate) {
+        updateData.terminationDate = new Date();
+      }
+
+      await customer.update(updateData);
+
+      logger.info(`Customer status updated: ${customerId} -> ${status}`);
+
+      return this.formatCustomer(customer);
     } catch (error) {
-      logger.error('Suspend customer error:', error.message);
+      logger.error('Update customer status error:', error.message);
       throw error;
     }
   }
 
   /**
-   * Reactivate customer account
-   */
-  static async reactivateCustomer(customerId, userId) {
-    try {
-      const customer = await Customer.findByPk(customerId);
-
-      if (!customer) {
-        throw new Error('Customer tidak ditemukan');
-      }
-
-      await customer.update({
-        status: 'active',
-        updatedBy: userId
-      });
-
-      logger.info(`Customer reactivated: ${customer.customerCode}`);
-
-      return this.formatCustomerResponse(customer);
-    } catch (error) {
-      logger.error('Reactivate customer error:', error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete customer (soft delete via status)
+   * Delete customer
    */
   static async deleteCustomer(customerId, userId) {
     try {
-      const customer = await Customer.findByPk(customerId);
-
-      if (!customer) {
-        throw new Error('Customer tidak ditemukan');
-      }
-
-      await customer.update({
-        status: 'inactive',
-        updatedBy: userId
+      const customer = await Customer.findOne({
+        where: { id: customerId, userId }
       });
 
-      logger.info(`Customer deleted (inactive): ${customer.customerCode}`);
+      if (!customer) {
+        return null;
+      }
 
-      return { message: 'Customer berhasil dihapus' };
+      await customer.destroy();
+
+      logger.info(`Customer deleted: ${customerId}`);
+
+      return true;
     } catch (error) {
       logger.error('Delete customer error:', error.message);
       throw error;
@@ -373,86 +376,34 @@ class CustomerService {
   }
 
   /**
-   * Get customer statistics
-   */
-  static async getCustomerStats() {
-    try {
-      const { sequelize } = require('../models');
-      const stats = await Customer.findAll({
-        attributes: [
-          [sequelize.fn('COUNT', sequelize.col('*')), 'total'],
-          [sequelize.fn('SUM', sequelize.col('currentBalance')), 'totalBalance'],
-          [sequelize.fn('SUM', sequelize.col('creditLimit')), 'totalCreditLimit']
-        ],
-        where: { status: 'active' }
-      });
-
-      const byStatus = await Customer.findAll({
-        attributes: [
-          'status',
-          [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-        ],
-        group: ['status'],
-        raw: true
-      });
-
-      const byType = await Customer.findAll({
-        attributes: [
-          'customerType',
-          [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-        ],
-        group: ['customerType'],
-        raw: true
-      });
-
-      return {
-        active: stats[0]?.get({ plain: true }) || { total: 0, totalBalance: 0, totalCreditLimit: 0 },
-        byStatus: byStatus.map(s => ({ status: s.status, count: parseInt(s.count) })),
-        byType: byType.map(t => ({ type: t.customerType, count: parseInt(t.count) }))
-      };
-    } catch (error) {
-      logger.error('Get customer stats error:', error.message);
-      throw error;
-    }
-  }
-
-  /**
    * Format customer response
    */
-  static formatCustomerResponse(customer) {
-    if (!customer) return null;
-
+  static formatCustomer(customer) {
     return {
       id: customer.id,
-      customerCode: customer.customerCode,
-      customerName: customer.customerName,
-      customerType: customer.customerType,
-      businessType: customer.businessType,
+      name: customer.name,
       email: customer.email,
       phone: customer.phone,
       npwp: customer.npwp,
-      npwpValidated: customer.npwpValidated,
-      npwpValidationDate: customer.npwpValidationDate,
-      identity: customer.identity,
-      identityType: customer.identityType,
+      ktp: customer.ktp,
+      companyName: customer.companyName,
+      businessType: customer.businessType,
       address: customer.address,
-      province: customer.province,
       city: customer.city,
-      zipCode: customer.zipCode,
-      billingAddress: customer.billingAddress,
-      billingProvince: customer.billingProvince,
-      billingCity: customer.billingCity,
-      billingZipCode: customer.billingZipCode,
+      province: customer.province,
+      postalCode: customer.postalCode,
+      installationAddress: customer.installationAddress,
+      installationCity: customer.installationCity,
+      installationProvince: customer.installationProvince,
+      installationPostalCode: customer.installationPostalCode,
+      accountNumber: customer.accountNumber,
+      status: customer.status,
+      connectionDate: customer.connectionDate,
+      terminationDate: customer.terminationDate,
       contactPerson: customer.contactPerson,
       contactPersonPhone: customer.contactPersonPhone,
-      bankAccountName: customer.bankAccountName,
-      bankAccountNumber: customer.bankAccountNumber,
-      bankName: customer.bankName,
-      status: customer.status,
-      creditLimit: parseFloat(customer.creditLimit),
-      currentBalance: parseFloat(customer.currentBalance),
-      registrationDate: customer.registrationDate,
-      lastActivityDate: customer.lastActivityDate,
+      contactPersonEmail: customer.contactPersonEmail,
+      taxableStatus: customer.taxableStatus,
       notes: customer.notes,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt

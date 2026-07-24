@@ -1,22 +1,32 @@
 const express = require('express');
 const CustomerController = require('../controllers/customerController');
 const { verifyToken, authorize } = require('../middleware/authMiddleware');
+const { USER_ROLES } = require('../utils/constants');
 
 const router = express.Router();
 
-// Middleware: All routes require authentication
+// All customer routes require authentication
 router.use(verifyToken);
 
-// Public routes (all authenticated users)
-router.post('/', CustomerController.createCustomer);
-router.get('/', CustomerController.getAllCustomers);
-router.get('/stats/overview', CustomerController.getCustomerStats);
-router.get('/:id', CustomerController.getCustomerById);
-router.put('/:id', CustomerController.updateCustomer);
+// Create customer (Admin & Staff only)
+router.post('/', authorize('admin', 'staff'), CustomerController.createCustomer);
 
-// Admin only routes
+// Get all customers
+router.get('/', CustomerController.getAllCustomers);
+
+// Get customer by account number
+router.get('/account/:accountNumber', CustomerController.getCustomerByAccountNumber);
+
+// Get customer by ID
+router.get('/:id', CustomerController.getCustomerById);
+
+// Update customer (Admin & Staff only)
+router.put('/:id', authorize('admin', 'staff'), CustomerController.updateCustomer);
+
+// Update customer status (Admin & Staff only)
+router.patch('/:id/status', authorize('admin', 'staff'), CustomerController.updateCustomerStatus);
+
+// Delete customer (Admin only)
 router.delete('/:id', authorize('admin'), CustomerController.deleteCustomer);
-router.post('/:id/suspend', authorize('admin', 'staff'), CustomerController.suspendCustomer);
-router.post('/:id/reactivate', authorize('admin', 'staff'), CustomerController.reactivateCustomer);
 
 module.exports = router;

@@ -9,9 +9,23 @@ class CustomerController {
   static async createCustomer(req, res, next) {
     try {
       const userId = req.user.id;
-      const customer = await CustomerService.createCustomer(req.body, userId);
+      const data = req.body;
 
-      logger.info(`New customer created by user ${userId}`);
+      // Validate required fields
+      const requiredFields = ['name', 'email', 'phone', 'accountNumber', 'businessType'];
+      for (const field of requiredFields) {
+        if (!data[field]) {
+          return res.status(400).json({
+            success: false,
+            message: `${field} wajib diisi`
+          });
+        }
+      }
+
+      // Create customer
+      const customer = await CustomerService.createCustomer(userId, data);
+
+      logger.info(`Customer created: ${customer.id}`);
 
       return res.status(201).json({
         success: true,
@@ -21,15 +35,15 @@ class CustomerController {
     } catch (error) {
       logger.error('Create customer error:', error.message);
 
-      if (error.message.includes('wajib diisi') || error.message.includes('tidak valid')) {
-        return res.status(400).json({
+      if (error.message.includes('Email sudah terdaftar')) {
+        return res.status(409).json({
           success: false,
           message: error.message
         });
       }
 
-      if (error.message.includes('sudah terdaftar') || error.message.includes('sudah')) {
-        return res.status(409).json({
+      if (error.message.includes('NPWP tidak valid')) {
+        return res.status(400).json({
           success: false,
           message: error.message
         });
@@ -41,36 +55,24 @@ class CustomerController {
 
   /**
    * GET /api/customers
-   * Get all customers with filters
+   * Get all customers (with pagination & filtering)
    */
   static async getAllCustomers(req, res, next) {
     try {
-      const filters = {
-        page: parseInt(req.query.page) || 1,
-        limit: parseInt(req.query.limit) || 10,
-        status: req.query.status || 'active',
-        search: req.query.search || '',
-        sortBy: req.query.sortBy || 'createdAt',
-        sortOrder: req.query.sortOrder?.toUpperCase() || 'DESC'
-      };
+      const userId = req.user.id;
+      const { page = 1, limit = 10, status, businessType, search } = req.query;
 
-      // Validate pagination
-      if (filters.page < 1 || filters.limit < 1) {
-        return res.status(400).json({
-          success: false,
-          message: 'Page dan limit harus lebih dari 0'
-        });
-      }
-
-      if (filters.limit > 100) {
-        filters.limit = 100;
-      }
-
-      const result = await CustomerService.getAllCustomers(filters);
+      const result = await CustomerService.getAllCustomers(userId, {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        status,
+        businessType,
+        search
+      });
 
       return res.status(200).json({
         success: true,
-        message: 'Customer list retrieved',
+        message: 'Data customers berhasil diambil',
         data: result.data,
         pagination: result.pagination
       });
@@ -87,24 +89,24 @@ class CustomerController {
   static async getCustomerById(req, res, next) {
     try {
       const { id } = req.params;
+      const userId = req.user.id;
 
-      const customer = await CustomerService.getCustomerById(id);
+      const customer = await CustomerService.getCustomerById(id, userId);
+
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer tidak ditemukan'
+        });
+      }
 
       return res.status(200).json({
         success: true,
-        message: 'Customer retrieved',
+        message: 'Data customer berhasil diambil',
         data: customer
       });
     } catch (error) {
       logger.error('Get customer by ID error:', error.message);
-
-      if (error.message.includes('tidak ditemukan')) {
-        return res.status(404).json({
-          success: false,
-          message: error.message
-        });
-      }
-
       next(error);
     }
   }
@@ -117,10 +119,18 @@ class CustomerController {
     try {
       const { id } = req.params;
       const userId = req.user.id;
+      const data = req.body;
 
-      const customer = await CustomerService.updateCustomer(id, req.body, userId);
+      const customer = await CustomerService.updateCustomer(id, userId, data);
 
-      logger.info(`Customer updated: ${id} by user ${userId}`);
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer tidak ditemukan'
+        });
+      }
+
+      logger.info(`Customer updated: ${id}`);
 
       return res.status(200).json({
         success: true,
@@ -130,15 +140,15 @@ class CustomerController {
     } catch (error) {
       logger.error('Update customer error:', error.message);
 
-      if (error.message.includes('tidak ditemukan')) {
-        return res.status(404).json({
+      if (error.message.includes('Email sudah terdaftar')) {
+        return res.status(409).json({
           success: false,
           message: error.message
         });
       }
 
-      if (error.message.includes('tidak valid') || error.message.includes('sudah')) {
-        return res.status(409).json({
+      if (error.message.includes('NPWP tidak valid')) {
+        return res.status(400).json({
           success: false,
           message: error.message
         });
@@ -150,16 +160,23 @@ class CustomerController {
 
   /**
    * DELETE /api/customers/:id
-   * Delete customer (soft delete)
+   * Delete customer
    */
   static async deleteCustomer(req, res, next) {
     try {
       const { id } = req.params;
       const userId = req.user.id;
 
-      await CustomerService.deleteCustomer(id, userId);
+      const result = await CustomerService.deleteCustomer(id, userId);
 
-      logger.info(`Customer deleted: ${id} by user ${userId}`);
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer tidak ditemukan'
+        });
+      }
+
+      logger.info(`Customer deleted: ${id}`);
 
       return res.status(200).json({
         success: true,
@@ -167,98 +184,82 @@ class CustomerController {
       });
     } catch (error) {
       logger.error('Delete customer error:', error.message);
-
-      if (error.message.includes('tidak ditemukan')) {
-        return res.status(404).json({
-          success: false,
-          message: error.message
-        });
-      }
-
       next(error);
     }
   }
 
   /**
-   * POST /api/customers/:id/suspend
-   * Suspend customer account
+   * PATCH /api/customers/:id/status
+   * Update customer status
    */
-  static async suspendCustomer(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { reason } = req.body;
-      const userId = req.user.id;
-
-      const customer = await CustomerService.suspendCustomer(id, reason, userId);
-
-      logger.info(`Customer suspended: ${id} by user ${userId}`);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Customer account berhasil disuspend',
-        data: customer
-      });
-    } catch (error) {
-      logger.error('Suspend customer error:', error.message);
-
-      if (error.message.includes('tidak ditemukan')) {
-        return res.status(404).json({
-          success: false,
-          message: error.message
-        });
-      }
-
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/customers/:id/reactivate
-   * Reactivate customer account
-   */
-  static async reactivateCustomer(req, res, next) {
+  static async updateCustomerStatus(req, res, next) {
     try {
       const { id } = req.params;
       const userId = req.user.id;
+      const { status } = req.body;
 
-      const customer = await CustomerService.reactivateCustomer(id, userId);
-
-      logger.info(`Customer reactivated: ${id} by user ${userId}`);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Customer account berhasil diaktifkan',
-        data: customer
-      });
-    } catch (error) {
-      logger.error('Reactivate customer error:', error.message);
-
-      if (error.message.includes('tidak ditemukan')) {
-        return res.status(404).json({
+      if (!status) {
+        return res.status(400).json({
           success: false,
-          message: error.message
+          message: 'Status wajib diisi'
         });
       }
 
+      const validStatuses = ['active', 'inactive', 'suspended', 'terminated'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Status tidak valid'
+        });
+      }
+
+      const customer = await CustomerService.updateCustomerStatus(id, userId, status);
+
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer tidak ditemukan'
+        });
+      }
+
+      logger.info(`Customer status updated: ${id} -> ${status}`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Status customer berhasil diubah',
+        data: customer
+      });
+    } catch (error) {
+      logger.error('Update customer status error:', error.message);
       next(error);
     }
   }
 
   /**
-   * GET /api/customers/stats/overview
-   * Get customer statistics
+   * GET /api/customers/account/:accountNumber
+   * Get customer by account number
    */
-  static async getCustomerStats(req, res, next) {
+  static async getCustomerByAccountNumber(req, res, next) {
     try {
-      const stats = await CustomerService.getCustomerStats();
+      const { accountNumber } = req.params;
+      const userId = req.user.id;
+
+      const customer = await CustomerService.getCustomerByAccountNumber(accountNumber, userId);
+
+      if (!customer) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer tidak ditemukan'
+        });
+      }
 
       return res.status(200).json({
         success: true,
-        message: 'Customer stats retrieved',
-        data: stats
+        message: 'Data customer berhasil diambil',
+        data: customer
       });
     } catch (error) {
-      logger.error('Get customer stats error:', error.message);
+      logger.error('Get customer by account number error:', error.message);
       next(error);
     }
   }
